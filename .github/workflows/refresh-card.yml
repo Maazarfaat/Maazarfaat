@@ -1,35 +1,70 @@
-
 name: Refresh GitHub ASCII Card
 
 on:
   schedule:
+    # Run daily at 06:17 UTC
     - cron: "17 6 * * *"
   workflow_dispatch:
-  push:
-    branches:
-      - main
+    inputs:
+      private_repos_count:
+        description: "Number of private repositories to include (used if no Personal Access Token configured)"
+        required: false
+        default: "2"
+      count_mode:
+        description: "Repository counting mode: 'auto', 'all', or 'public'"
+        required: false
+        default: "auto"
 
 permissions:
   contents: write
 
+concurrency:
+  group: refresh-ascii-card
+  cancel-in-progress: true
+
 jobs:
-  refresh:
+  refresh-card:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download updated cards
-        run: |
-          curl -fsSL "https://gh.crafter.run/Maazarfaat?theme=dark&cols=120" -o dark_mode.svg
-          curl -fsSL "https://gh.crafter.run/Maazarfaat?theme=light&cols=120" -o light_mode.svg
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Commit if changed
+      - name: Refresh ASCII Profile Cards
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARD_TOKEN: ${{ secrets.CARD_TOKEN || secrets.PROFILE_TOKEN || '' }}
+          PRIVATE_REPOS_COUNT: ${{ inputs.private_repos_count || '2' }}
+          COUNT_MODE: ${{ inputs.count_mode || 'auto' }}
+        run: |
+          # Use CARD_TOKEN (PAT) if configured to access private repo statistics,
+          # otherwise fall back to the built-in GITHUB_TOKEN
+          TOKEN="${CARD_TOKEN:-$GITHUB_TOKEN}"
+          python scripts/update_card.py \
+            --username "${{ github.repository_owner }}" \
+            --token "$TOKEN" \
+            --count-mode "$COUNT_MODE" \
+            --private-repos-count "$PRIVATE_REPOS_COUNT" \
+            --dark-svg dark_mode.svg \
+            --light-svg light_mode.svg
+
+      - name: Validate Cards
+        run: |
+          python scripts/update_card.py --validate-only
+
+      - name: Commit and Push if Changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add dark_mode.svg light_mode.svg
           if ! git diff --cached --quiet; then
-            git commit -m "chore: refresh ASCII profile card"
+            echo "Changes detected in profile cards. Committing..."
+            git commit -m "chore: refresh ASCII profile card [skip ci]"
             git push
+          else
+            echo "Profile cards are already up to date. No changes to commit."
           fi
