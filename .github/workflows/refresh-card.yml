@@ -1,0 +1,35 @@
+
+name: Refresh GitHub ASCII Card
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download updated cards
+        run: |
+          curl -fsSL "https://gh.crafter.run/Maazarfaat?theme=dark&cols=120" -o dark_mode.svg
+          curl -fsSL "https://gh.crafter.run/Maazarfaat?theme=light&cols=120" -o light_mode.svg
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dark_mode.svg light_mode.svg
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: refresh ASCII profile card"
+            git push
+          fi
